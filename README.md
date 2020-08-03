@@ -85,11 +85,13 @@ The `render()` method is hookable, allowing you to customise rendering on a per 
 // in site/ready.php
 $wire->addHookBefore('TextformatterVideoMarkup::render', function(HookEvent $event) {
 
+	// Arguments
 	$tpl = $event->arguments(0); // string: The markup template
 	$data = $event->arguments(1); // array: The oEmbed data
 	$url = $event->arguments(2); // string: The requested URL
 	$emptyValue = $event->arguments(3); // string: The empty value used if no data is returned
 
+	// Object properties
 	$page = $event->object->page; // Page: The page
 	$field = $event->object->field; // Field: The field
 	$html = $event->object->html; // bool: Is it HTML being parsed, or plain text?
