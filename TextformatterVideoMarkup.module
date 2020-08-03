@@ -1,0 +1,342 @@
+<?php namespace ProcessWire;
+
+/**
+ * Textformatter Video Markup
+ *
+ * #pw-summary Render oEmbed data from YouTube/Vimeo URLs.
+ * #pw-body Based on TextformatterVideoEmbed by Ryan Cramer and TextformatterVideoEmbedOptions by Steffen Henschel.
+ *
+ * @copyright 2020 NB Communication Ltd
+ * @license Mozilla Public License v2.0 http://mozilla.org/MPL/2.0/
+ *
+ * @property Field $field
+ * @property bool $html
+ * @property Page $page
+ *
+ */
+
+class TextformatterVideoMarkup extends Textformatter implements ConfigurableModule {
+
+	/**
+	 * getModuleInfo is a module required by all modules to tell ProcessWire about them
+	 *
+	 * @return array
+	 *
+	 */
+	public static function getModuleInfo() {
+		return [
+			'title' => 'Video markup for YouTube/Vimeo',
+			'version' => 010,
+			'summary' => 'Render oEmbed data from YouTube/Vimeo URLs.',
+			'author' => 'nbcommunication',
+			'href' => 'https://github.com/nbcommunication/TextformatterVideoMarkup',
+			'icon' => 'video-camera',
+			'requires' => 'ProcessWire>=3.0.148,PHP>=7',
+		];
+	}
+
+	const noCookie = 'noCookie';
+
+	/**
+	 * The field
+	 *
+	 * @var Field
+	 *
+	 */
+	public $field;
+
+	/**
+	 * Is HTML?
+	 *
+	 * @var bool
+	 *
+	 */
+	public $html;
+
+	/**
+	 * The page
+	 *
+	 * @var Page
+	 *
+	 */
+	public $page;
+
+	/**
+	 * Format the given text string with Page and Field provided.
+	 *
+	 * @param Page $page
+	 * @param Field $field
+	 * @param string|mixed $value Value is provided as a reference, so is modified directly (not returned).
+	 *
+	 */
+	public function formatValue(Page $page, Field $field, &$value) {
+
+		$this->page = $page;
+		$this->field = $field;
+
+		// Is HTML being parsed?
+		if($field instanceof Field && $page instanceof Page) {
+			$inputfield = $field->getInputfield($page);
+			$this->html = $inputfield instanceof InputfieldTextarea && $inputfield->contentType >= 1;
+		}
+
+		$value = str_replace('&amp;', '&', $value);
+
+		$this->renderYoutube($value);
+		$this->renderVimeo($value);
+	}
+
+	/**
+	 * Render the data
+	 *
+	 * @param string $tpl
+	 * @param array|null $data
+	 * @param string $line
+	 * @param string|null $emptyValue
+	 * @return string
+	 *
+	 */
+	public function ___render($tpl, $data, $line, $emptyValue = null) {
+		if(!is_array($data)) {
+			if(is_null($emptyValue)) $emptyValue = $this->emptyValue;
+			if(strpos($emptyValue, '{link}') !== false) {
+				$url = $this->html ? strip_tags($line) : $line;
+				$link = "<a href=$url target=_blank rel=noopener>$url</a>";
+				$emptyValue = str_replace('{link}', ($this->html ? "<p>$link</p>" : $link), $emptyValue);
+			}
+			$emptyValue = str_replace('{url}', $line, $emptyValue);
+			return $emptyValue;
+		}
+		foreach($data as $key => $value) {
+			$tpl = str_replace('{' . $key .'}', $value, $tpl);
+		}
+		return $tpl;
+	}
+
+	/**
+	 * Apply options
+	 *
+	 * @param string $prefix
+	 * @param string $url
+	 * @return string
+	 *
+	 */
+	protected function applyOptions($prefix, $url) {
+
+		$prefix = "{$prefix}_";
+		$query = [];
+		$url = explode('?', $url);
+
+		if(count($url) > 1) {
+			parse_str($url[1], $q);
+			$query = array_merge($query, $q);
+		}
+
+		foreach($this->data as $key => $value) {
+			if($value === '' || substr($key, 3) === self::noCookie) continue;
+			if(substr($key, 0, 3) == $prefix) {
+				$key = str_replace($prefix, '', $key);
+				if(!isset($query[$key])) {
+					$query[$key] = $value;
+				}
+			}
+		}
+
+		// Apply current language if multi-language enabled
+		if($this->wire('languages') !== null) {
+			$lang = $this->wire('user')->language->name;
+			if($lang) {
+				foreach([
+					'yt' => ['cc_lang_pref', 'hl'],
+					'vm' => ['texttrack'],
+				] as $provider => $keys) {
+					if($prefix == "{$provider}_") {
+						foreach($keys as $key) {
+							if(!isset($query[$key])) {
+								$query[$key] = $lang;
+							}
+						}
+					}
+				}
+			}
+		}
+
+		foreach($query as $key => $value) {
+			// Remove # on vm_color
+			if($key == 'color' && $prefix == 'vm_') $query[$key] = ltrim($value, '#');
+		}
+
+		return $url[0] . (count($query) ? '?' . http_build_query($query) : '');
+	}
+
+	/**
+	 * Apply Vimeo options
+	 *
+	 * Based on TextformatterVideoEmbedOptions::applyVimeo by Steffen Henschel.
+	 *
+	 * @param string $url
+	 * @return string
+	 *
+	 */
+	protected function applyVimeoOptions($url) {
+		return $this->applyOptions('vm', $url);
+	}
+
+	/**
+	 * Apply YouTube options
+	 *
+	 * Based on TextformatterVideoEmbedOptions::applyYoutube by Steffen Henschel.
+	 *
+	 * @param string $url
+	 * @return string
+	 *
+	 */
+	protected function applyYoutubeOptions($url) {
+		return $this->applyOptions('yt', $this->applyYoutubeNoCookie($url));
+	}
+
+	/**
+	 * Apply the YouTube 'No Cookie' URL
+	 *
+	 * @param string $url
+	 * @return string
+	 *
+	 */
+	protected function applyYoutubeNoCookie($url) {
+		return $this->yt_noCookie ? str_replace('youtube.com', 'youtube-nocookie.com', $url) : $url;
+	}
+
+	/**
+	 * Given a service oembed URL and video ID, return its oEmbed data.
+	 *
+	 * A cached version of the data will be used if possible. When not possible,
+	 * it will be retrieved from the service's oembed URL, and then cached.
+	 *
+	 * @param string $provider
+	 * @param string $url
+	 * @return array|null
+	 *
+	 */
+	protected function getData($provider, $url) {
+
+		$query = [
+			'url' => $url,
+			'maxwidth' => $this->maxWidth,
+			'maxheight' => $this->maxHeight,
+		];
+		if($provider == 'yt') $query['format'] = 'json';
+
+		$endpoint = ($provider == 'yt' ?
+			'https://www.youtube.com/oembed' :
+			'https://vimeo.com/api/oembed.json'
+		) . '?' . http_build_query($query);
+
+		$data = $this->wire('cache')->getFor($this, md5($endpoint), function() use ($endpoint) {
+			return $this->wire(new WireHttp())->getJSON($endpoint);
+		}, WireCache::expireNever);
+
+		if(is_array($data)) {
+			$query = explode('?', $url);
+			if(count($query) > 1 && isset($data['html'])) {
+				$query = $query[1];
+				if(strlen($query)) {
+					$query = str_replace('&amp;', '&', $query);
+					if($provider == 'yt') {
+						$query = explode('&', $query, 2);
+						$query = count($query) > 1 ? trim($query[1], '&') : '';
+					}
+					if($query) $data['html'] = str_replace('?', "?$query&", $data['html']);
+					$data['html'] = $this->applyYoutubeNoCookie($data['html']);
+				}
+			}
+			if($this->wire('config')->debug) {
+				$table = $this->wire('modules')->get('MarkupAdminDataTable');
+				foreach($data as $key => $value) $table->row([$key, $value]);
+				$data['debug'] = "<h3>$url</h3>" . $table->render();
+			} else {
+				$data['debug'] = '';
+			}
+			$data['url'] = $url;
+			preg_match('/<iframe.*?src="(.*?)"/', $data['html'], $matches);
+			if(count($matches)) $data['embedUrl'] = $matches[1];
+			$data['width'] = $data['width'] ?? $this->maxWidth;
+			$data['height'] = $data['height'] ?? $this->maxHeight;
+			$data['class'] = $provider;
+		}
+
+		return $data;
+	}
+
+	/**
+	 * Check for Vimeo URLs and render the data if found
+	 *
+	 * Based on TextformatterVideoEmbed::embedVimeo by Ryan Cramer.
+	 *
+	 * @param string $str
+	 *
+	 */
+	protected function renderVimeo(&$str) {
+
+		if(strpos($str, '://vimeo.com/') === false) return;
+
+		if(!preg_match_all(
+			'#' .
+			($this->html ? '<p>' : '') .
+			'\s*(https?://vimeo.com/\S*)' .
+			($this->html ? '</p>' : '') .
+			'#',
+			$str,
+			$matches
+		)) return;
+
+		foreach($matches[0] as $key => $line) {
+			$url = $this->applyVimeoOptions($matches[1][$key], 'vm');
+			$str = $this->replace($str, $this->getData('vm', $url), $line);
+		}
+	}
+
+	/**
+	 * Check for Youtube URLs and render the data if found
+	 *
+	 * Based on TextformatterVideoEmbed::embedYoutube by Ryan Cramer.
+	 *
+	 * @param string $str
+	 *
+	 */
+	protected function renderYoutube(&$str) {
+
+		// perform a strpos fast check before performing regex check
+		if(strpos($str, '://www.youtube.com/watch') === false
+			&& strpos($str, '://www.youtube.com/v/') === false
+			&& strpos($str, '://youtu.be/') === false) return;
+
+		if(!preg_match_all(
+			'#' .
+			($this->html ? '<p>' : '') .
+			'\s*(https?://(?:www\.)?youtu(?:.be|be.com)+/(?:watch/?\?v=|v/)?([^\s&<\'"]+)(&[-_,.=&;a-zA-Z0-9]*)?).*?' .
+			($this->html ? '</p>' : '') .
+			'#',
+			$str,
+			$matches
+		)) return;
+
+		foreach($matches[0] as $key => $line) {
+			$url = $this->applyYoutubeOptions($matches[1][$key], 'yt');
+			$str = $this->replace($str, $this->getData('yt', $url), $line);
+		}
+
+	}
+
+	/**
+	 * Replace the URL with the rendered markup
+	 *
+	 * @param string $str
+	 * @param array|null $data
+	 * @param string $line
+	 * @return string
+	 *
+	 */
+	protected function replace($str, $data, $line) {
+		return str_replace($line, $this->render(($this->markupTpl ?: ($data['debug'] ? '{debug}' : '{html}')), $data, $line), $str);
+	}
+}
