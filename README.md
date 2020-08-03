@@ -96,7 +96,7 @@ $wire->addHookBefore('TextformatterVideoMarkup::render', function(HookEvent $eve
 
 	// Example 1 - Replace the thumbnail image
 	if($field->name == 'video' && $page->hasField('images') && $page->images->count) {
-		$data['thumbnail_url'] =  $page->images->first->first->url;
+		$data['thumbnail_url'] =  $page->images->first->url;
 		$event->arguments(1, $data);
 	}
 
