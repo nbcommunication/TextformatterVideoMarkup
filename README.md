@@ -44,7 +44,7 @@ These additional placeholders are also available:
 #### Debugging
 If `$config->debug` is set to `true`, you can output a table of the data returned by the oEmbed endpoint using the `{debug}` placeholder.
 
-#### Example - Thumbnail image with UIKit Lightbox
+#### Example - Thumbnail image with UIkit Lightbox
 ```html
 <figure data-uk-lightbox>
     <a href="{url}" data-poster="{thumbnail_url}" data-attrs="width: {width}; height: {height}">
