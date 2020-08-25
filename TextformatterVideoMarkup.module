@@ -26,7 +26,7 @@ class TextformatterVideoMarkup extends Textformatter implements ConfigurableModu
 	public static function getModuleInfo() {
 		return [
 			'title' => 'Video markup for YouTube/Vimeo',
-			'version' => '0.2.0',
+			'version' => '0.2.1',
 			'summary' => 'Render oEmbed data from YouTube/Vimeo URLs.',
 			'author' => 'nbcommunication',
 			'href' => 'https://github.com/nbcommunication/TextformatterVideoMarkup',
