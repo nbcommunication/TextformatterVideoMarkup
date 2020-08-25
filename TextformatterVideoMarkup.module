@@ -26,7 +26,7 @@ class TextformatterVideoMarkup extends Textformatter implements ConfigurableModu
 	public static function getModuleInfo() {
 		return [
 			'title' => 'Video markup for YouTube/Vimeo',
-			'version' => 010,
+			'version' => 020,
 			'summary' => 'Render oEmbed data from YouTube/Vimeo URLs.',
 			'author' => 'nbcommunication',
 			'href' => 'https://github.com/nbcommunication/TextformatterVideoMarkup',
@@ -76,8 +76,11 @@ class TextformatterVideoMarkup extends Textformatter implements ConfigurableModu
 
 		// Is HTML being parsed?
 		if($field instanceof Field && $page instanceof Page) {
+			$of = $page->of();
+			$page->of(false); // Set output formatting to false before getting the Inputfield
 			$inputfield = $field->getInputfield($page);
 			$this->html = $inputfield instanceof InputfieldTextarea && $inputfield->contentType >= 1;
+			$page->of($of);
 		}
 
 		$value = str_replace('&amp;', '&', $value);
