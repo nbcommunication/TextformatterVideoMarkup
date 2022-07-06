@@ -6,7 +6,7 @@
  * #pw-summary Render oEmbed data from YouTube/Vimeo URLs.
  * #pw-body Based on TextformatterVideoEmbed by Ryan Cramer and TextformatterVideoEmbedOptions by Steffen Henschel.
  *
- * @copyright 2020 NB Communication Ltd
+ * @copyright 2022 NB Communication Ltd
  * @license Mozilla Public License v2.0 http://mozilla.org/MPL/2.0/
  *
  * @property Field $field
@@ -26,7 +26,7 @@ class TextformatterVideoMarkup extends Textformatter implements ConfigurableModu
 	public static function getModuleInfo() {
 		return [
 			'title' => 'Video markup for YouTube/Vimeo',
-			'version' => '0.2.1',
+			'version' => '0.3.0',
 			'summary' => 'Render oEmbed data from YouTube/Vimeo URLs.',
 			'author' => 'nbcommunication',
 			'href' => 'https://github.com/nbcommunication/TextformatterVideoMarkup',
@@ -311,12 +311,13 @@ class TextformatterVideoMarkup extends Textformatter implements ConfigurableModu
 		// perform a strpos fast check before performing regex check
 		if(strpos($str, '://www.youtube.com/watch') === false
 			&& strpos($str, '://www.youtube.com/v/') === false
+			&& strpos($str, '://www.youtube.com/shorts/') === false
 			&& strpos($str, '://youtu.be/') === false) return;
 
 		if(!preg_match_all(
 			'#' .
 			($this->html ? '<p>' : '') .
-			'\s*(https?://(?:www\.)?youtu(?:.be|be.com)+/(?:watch/?\?v=|v/)?([^\s&<\'"]+)(&[-_,.=&;a-zA-Z0-9]*)?).*?' .
+			'\s*(https?://(?:www\.)?youtu(?:.be|be.com)+/(?:watch/?\?v=|v/|shorts/)?([^\s&<\'"]+)(&[-_,.=&;a-zA-Z0-9]*)?).*?' .
 			($this->html ? '</p>' : '') .
 			'#',
 			$str,
@@ -327,7 +328,6 @@ class TextformatterVideoMarkup extends Textformatter implements ConfigurableModu
 			$url = $this->applyYoutubeOptions($matches[1][$key], 'yt');
 			$str = $this->replace($str, $this->getData('yt', $url), $line);
 		}
-
 	}
 
 	/**
