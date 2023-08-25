@@ -116,3 +116,6 @@ $wire->addHookBefore('TextformatterVideoMarkup::render', function(HookEvent $eve
 	$event->arguments(3, $emptyValue);
 });
 ```
+
+## Notes
+If the data cannot be retrieved, e.g. the video is private, a blank string is returned.

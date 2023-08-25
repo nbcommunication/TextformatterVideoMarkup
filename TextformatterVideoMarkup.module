@@ -26,7 +26,7 @@ class TextformatterVideoMarkup extends Textformatter implements ConfigurableModu
 	public static function getModuleInfo() {
 		return [
 			'title' => 'Video markup for YouTube/Vimeo',
-			'version' => '0.4.0',
+			'version' => 100,
 			'summary' => 'Render oEmbed data from YouTube/Vimeo URLs.',
 			'author' => 'nbcommunication',
 			'href' => 'https://github.com/nbcommunication/TextformatterVideoMarkup',
@@ -148,8 +148,8 @@ class TextformatterVideoMarkup extends Textformatter implements ConfigurableModu
 		}
 
 		// Apply current language if multi-language enabled
-		if($this->wire('languages') !== null) {
-			$lang = $this->wire('user')->language->name;
+		if($this->wire()->languages !== null) {
+			$lang = $this->wire()->user->language->name;
 			if($lang) {
 				foreach([
 					'yt' => ['cc_lang_pref', 'hl'],
@@ -219,7 +219,7 @@ class TextformatterVideoMarkup extends Textformatter implements ConfigurableModu
 	 *
 	 * @param string $provider
 	 * @param string $url
-	 * @return array|null
+	 * @return array
 	 *
 	 */
 	protected function getData($provider, $url) {
@@ -236,7 +236,7 @@ class TextformatterVideoMarkup extends Textformatter implements ConfigurableModu
 			'https://vimeo.com/api/oembed.json'
 		) . '?' . http_build_query($query);
 
-		$data = $this->wire('cache')->getFor($this, md5($endpoint), function() use ($endpoint) {
+		$data = $this->wire()->cache->getFor($this, md5($endpoint), function() use ($endpoint) {
 			return $this->wire(new WireHttp())->getJSON($endpoint);
 		}, WireCache::expireNever);
 
@@ -254,8 +254,8 @@ class TextformatterVideoMarkup extends Textformatter implements ConfigurableModu
 					$data['html'] = $this->applyYoutubeNoCookie($data['html']);
 				}
 			}
-			if($this->wire('config')->debug) {
-				$table = $this->wire('modules')->get('MarkupAdminDataTable');
+			if($this->wire()->config->debug) {
+				$table = $this->wire()->modules->get('MarkupAdminDataTable');
 				foreach($data as $key => $value) $table->row([$key, $value]);
 				$data['debug'] = "<h3>$url</h3>" . $table->render();
 			} else {
@@ -269,7 +269,7 @@ class TextformatterVideoMarkup extends Textformatter implements ConfigurableModu
 			$data['class'] = $provider;
 		}
 
-		return $data;
+		return is_array($data) ? $data : [];
 	}
 
 	/**
@@ -336,12 +336,13 @@ class TextformatterVideoMarkup extends Textformatter implements ConfigurableModu
 	 * Replace the URL with the rendered markup
 	 *
 	 * @param string $str
-	 * @param array|null $data
+	 * @param array $data
 	 * @param string $line
 	 * @return string
 	 *
 	 */
 	protected function replace($str, $data, $line) {
+		if(empty($data)) return ''; // no data, so return empty string
 		return str_replace($line, $this->render(($this->markupTpl ?: ($data['debug'] ? '{debug}' : '{html}')), $data, $line), $str);
 	}
 }
