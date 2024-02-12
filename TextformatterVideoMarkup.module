@@ -6,7 +6,7 @@
  * #pw-summary Render oEmbed data from YouTube/Vimeo URLs.
  * #pw-body Based on TextformatterVideoEmbed by Ryan Cramer and TextformatterVideoEmbedOptions by Steffen Henschel.
  *
- * @copyright 2023 NB Communication Ltd
+ * @copyright 2024 NB Communication Ltd
  * @license Mozilla Public License v2.0 http://mozilla.org/MPL/2.0/
  *
  * @property Field $field
@@ -26,7 +26,7 @@ class TextformatterVideoMarkup extends Textformatter implements ConfigurableModu
 	public static function getModuleInfo() {
 		return [
 			'title' => 'Video markup for YouTube/Vimeo',
-			'version' => 100,
+			'version' => 101,
 			'summary' => 'Render oEmbed data from YouTube/Vimeo URLs.',
 			'author' => 'nbcommunication',
 			'href' => 'https://github.com/nbcommunication/TextformatterVideoMarkup',
@@ -224,14 +224,19 @@ class TextformatterVideoMarkup extends Textformatter implements ConfigurableModu
 	 */
 	protected function getData($provider, $url) {
 
+		$isYoutube = $provider == 'yt';
+
 		$query = [
 			'url' => $url,
 			'maxwidth' => $this->maxWidth,
 			'maxheight' => $this->maxHeight,
 		];
-		if($provider == 'yt') $query['format'] = 'json';
 
-		$endpoint = ($provider == 'yt' ?
+		if($isYoutube) {
+			$query['format'] = 'json';
+		}
+
+		$endpoint = ($isYoutube ?
 			'https://www.youtube.com/oembed' :
 			'https://vimeo.com/api/oembed.json'
 		) . '?' . http_build_query($query);
@@ -246,14 +251,34 @@ class TextformatterVideoMarkup extends Textformatter implements ConfigurableModu
 				$query = $query[1];
 				if(strlen($query)) {
 					$query = str_replace('&amp;', '&', $query);
-					if($provider == 'yt') {
+					if($isYoutube) {
 						$query = explode('&', $query, 2);
 						$query = count($query) > 1 ? trim($query[1], '&') : '';
 					}
-					if($query) $data['html'] = str_replace('?', "?$query&", $data['html']);
+					if($query) {
+						$data['html'] = str_replace('?', "?$query&", $data['html']);
+						$data['params'] = $query;
+					}
 					$data['html'] = $this->applyYoutubeNoCookie($data['html']);
 				}
 			}
+
+			$data['url'] = $url;
+			preg_match('/<iframe.*?src="(.*?)"/', $data['html'], $matches);
+			$data['embedUrl'] = count($matches) ? $matches[1] : '';
+			$data['width'] = $data['width'] ?? $this->maxWidth;
+			$data['height'] = $data['height'] ?? $this->maxHeight;
+			$data['class'] = $provider;
+
+			if($data['embedUrl'] && !isset($data['video_id'])) {
+				$segments = explode('/', explode('?', $data['embedUrl'])[0]);
+				$data['video_id'] = end($segments);
+			}
+
+			// lite facade
+			$type = $isYoutube ? 'youtube' : 'vimeo';
+			$data['lite'] = "<lite-$type videoid=\"{$data['video_id']}\" params=\"{$data['params']}\" playlabel=\"{$this->_('Play')}: {$data['title']}\"></lite-$type>";
+
 			if($this->wire()->config->debug) {
 				$table = $this->wire()->modules->get('MarkupAdminDataTable');
 				foreach($data as $key => $value) $table->row([$key, $value]);
@@ -261,12 +286,6 @@ class TextformatterVideoMarkup extends Textformatter implements ConfigurableModu
 			} else {
 				$data['debug'] = '';
 			}
-			$data['url'] = $url;
-			preg_match('/<iframe.*?src="(.*?)"/', $data['html'], $matches);
-			if(count($matches)) $data['embedUrl'] = $matches[1];
-			$data['width'] = $data['width'] ?? $this->maxWidth;
-			$data['height'] = $data['height'] ?? $this->maxHeight;
-			$data['class'] = $provider;
 		}
 
 		return is_array($data) ? $data : [];
