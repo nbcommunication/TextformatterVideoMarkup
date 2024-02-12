@@ -37,9 +37,11 @@ This is the template that will be used to render the [oEmbed](https://oembed.com
 Vimeo also returns a number of custom properties. For more information on these please see [https://developer.vimeo.com/api/oembed/videos#table-3](https://developer.vimeo.com/api/oembed/videos#table-3).
 
 These additional placeholders are also available:
+- `video_id`: The ID of the video
 - `url`: The requested URL.
 - `embedUrl`: The embed URL.
 - `class`: **yt** or **vm**. Useful for styling YouTube/Vimeo markup differently.
+- `lite`: A pre-rendered facade. See *Facades* below.
 
 #### Debugging
 If `$config->debug` is set to `true`, you can output a table of the data returned by the oEmbed endpoint using the `{debug}` placeholder.
@@ -74,6 +76,11 @@ If multi-language support is enabled, language paramaters will default to the na
 More information on these options can be found here: [YouTube](https://developers.google.com/youtube/player_parameters#Parameters) / [Vimeo](https://developer.vimeo.com/api/oembed/videos#table-2)
 
 Note: YouTube's `rel=0` doesn't behave the way it used to - see the link above for more information.
+
+### Facades
+The preferred way of loading 3rd-party resources is via a facade: [https://developer.chrome.com/docs/lighthouse/performance/third-party-facades](https://developer.chrome.com/docs/lighthouse/performance/third-party-facades).
+
+This module creates the markup appropriate for [https://github.com/paulirish/lite-youtube-embed](lite-youtube-embed) and [https://github.com/luwes/lite-vimeo-embed](lite-vimeo-embed) and it can be accessed via the `lite` property. You will need to implement the required assets yourself for this to work.
 
 ### Cache
 Any data returned by the oEmbed endpoints is cached permanently unless cleared manually, which you can do so here.
