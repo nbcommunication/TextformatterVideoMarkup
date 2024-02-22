@@ -26,7 +26,7 @@ class TextformatterVideoMarkup extends Textformatter implements ConfigurableModu
 	public static function getModuleInfo() {
 		return [
 			'title' => 'Video markup for YouTube/Vimeo',
-			'version' => 101,
+			'version' => 102,
 			'summary' => 'Render oEmbed data from YouTube/Vimeo URLs.',
 			'author' => 'nbcommunication',
 			'href' => 'https://github.com/nbcommunication/TextformatterVideoMarkup',
@@ -219,10 +219,11 @@ class TextformatterVideoMarkup extends Textformatter implements ConfigurableModu
 	 *
 	 * @param string $provider
 	 * @param string $url
+	 * @param string $originalUrl
 	 * @return array
 	 *
 	 */
-	protected function getData($provider, $url) {
+	protected function getData($provider, $url, $originalUrl = '') {
 
 		$isYoutube = $provider == 'yt';
 
@@ -263,7 +264,7 @@ class TextformatterVideoMarkup extends Textformatter implements ConfigurableModu
 				}
 			}
 
-			$data['url'] = $url;
+			$data['url'] = $originalUrl ?: $url;
 			preg_match('/<iframe.*?src="(.*?)"/', $data['html'], $matches);
 			$data['embedUrl'] = count($matches) ? $matches[1] : '';
 			$data['width'] = $data['width'] ?? $this->maxWidth;
@@ -346,8 +347,9 @@ class TextformatterVideoMarkup extends Textformatter implements ConfigurableModu
 		)) return;
 
 		foreach($matches[0] as $key => $line) {
-			$url = $this->applyYoutubeOptions($matches[1][$key], 'yt');
-			$str = $this->replace($str, $this->getData('yt', $url), $line);
+			$originalUrl = $matches[1][$key];
+			$url = $this->applyYoutubeOptions($originalUrl, 'yt');
+			$str = $this->replace($str, $this->getData('yt', $url, $originalUrl), $line);
 		}
 	}
 
