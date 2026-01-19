@@ -6,7 +6,7 @@
  * #pw-summary Render oEmbed data from YouTube/Vimeo URLs.
  * #pw-body Based on TextformatterVideoEmbed by Ryan Cramer and TextformatterVideoEmbedOptions by Steffen Henschel.
  *
- * @copyright 2024 NB Communication Ltd
+ * @copyright 2026 NB Communication Ltd
  * @license Mozilla Public License v2.0 http://mozilla.org/MPL/2.0/
  *
  * @property Field $field
@@ -26,7 +26,7 @@ class TextformatterVideoMarkup extends Textformatter implements ConfigurableModu
 	public static function getModuleInfo() {
 		return [
 			'title' => 'Video markup for YouTube/Vimeo',
-			'version' => 103,
+			'version' => 104,
 			'summary' => 'Render oEmbed data from YouTube/Vimeo URLs.',
 			'author' => 'nbcommunication',
 			'href' => 'https://github.com/nbcommunication/TextformatterVideoMarkup',
@@ -43,7 +43,7 @@ class TextformatterVideoMarkup extends Textformatter implements ConfigurableModu
 	 * @var Field
 	 *
 	 */
-	public $field;
+	public $field = null;
 
 	/**
 	 * Is HTML?
@@ -51,7 +51,7 @@ class TextformatterVideoMarkup extends Textformatter implements ConfigurableModu
 	 * @var bool
 	 *
 	 */
-	public $html;
+	public $html = false;
 
 	/**
 	 * The page
@@ -59,7 +59,7 @@ class TextformatterVideoMarkup extends Textformatter implements ConfigurableModu
 	 * @var Page
 	 *
 	 */
-	public $page;
+	public $page = null;
 
 	/**
 	 * Format the given text string with Page and Field provided.
@@ -79,7 +79,7 @@ class TextformatterVideoMarkup extends Textformatter implements ConfigurableModu
 			$of = $page->of();
 			$page->of(false); // Set output formatting to false before getting the Inputfield
 			$inputfield = $field->getInputfield($page);
-			$this->html = $inputfield instanceof InputfieldTextarea && $inputfield->contentType >= 1;
+			$this->html = $inputfield instanceof InputfieldTextarea && $inputfield->contentType >= 1 ? true : $this->html;
 			$page->of($of);
 		}
 
