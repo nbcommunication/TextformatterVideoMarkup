@@ -11,6 +11,7 @@
  *
  * @property Field $field
  * @property bool $html
+ * @property bool $isHtml
  * @property Page $page
  *
  */
@@ -26,7 +27,7 @@ class TextformatterVideoMarkup extends Textformatter implements ConfigurableModu
 	public static function getModuleInfo() {
 		return [
 			'title' => 'Video markup for YouTube/Vimeo',
-			'version' => 104,
+			'version' => 105,
 			'summary' => 'Render oEmbed data from YouTube/Vimeo URLs.',
 			'author' => 'nbcommunication',
 			'href' => 'https://github.com/nbcommunication/TextformatterVideoMarkup',
@@ -49,9 +50,18 @@ class TextformatterVideoMarkup extends Textformatter implements ConfigurableModu
 	 * Is HTML?
 	 *
 	 * @var bool
+	 * @todo should be private?
 	 *
 	 */
 	public $html = false;
+
+	/**
+	 * Is HTML?
+	 *
+	 * @var bool
+	 *
+	 */
+	public $isHtml = false;
 
 	/**
 	 * The page
@@ -79,7 +89,7 @@ class TextformatterVideoMarkup extends Textformatter implements ConfigurableModu
 			$of = $page->of();
 			$page->of(false); // Set output formatting to false before getting the Inputfield
 			$inputfield = $field->getInputfield($page);
-			$this->html = $inputfield instanceof InputfieldTextarea && $inputfield->contentType >= 1 ? true : $this->html;
+			$this->html = $this->isHtml ?: $inputfield instanceof InputfieldTextarea && $inputfield->contentType >= 1;
 			$page->of($of);
 		}
 
@@ -87,6 +97,7 @@ class TextformatterVideoMarkup extends Textformatter implements ConfigurableModu
 
 		$this->renderYoutube($value);
 		$this->renderVimeo($value);
+		$this->isHtml = false; // reset for next use
 	}
 
 	/**
