@@ -7,7 +7,7 @@ Render oEmbed data from YouTube/Vimeo URLs. Based on [TextformatterVideoEmbed](h
 
 ## Installation
 1. Download the [zip file](https://github.com/nbcommunication/TextformatterVideoMarkup/archive/master.zip) at Github or clone the repo into your `site/modules` directory.
-2. If you downloaded the zip file, extract it in your `sites/modules` directory.
+2. If you downloaded the zip file, extract it in your `site/modules` directory.
 3. In your admin, go to Modules > Refresh, then Modules > New, then click on the Install button for this module.
 
 ## How to use
@@ -41,6 +41,7 @@ These additional placeholders are also available:
 - `url`: The requested URL.
 - `embedUrl`: The embed URL.
 - `class`: **yt** or **vm**. Useful for styling YouTube/Vimeo markup differently.
+- `params`: The query string extracted from the requested URL.
 - `lite`: A pre-rendered facade. See *Facades* below.
 
 #### Debugging
@@ -69,9 +70,9 @@ For the empty value, the following placeholders can be used:
 ### YouTube/Vimeo Options
 These allow global configuration of videos. Not all options are available, just those that could be useful to set globally. For example, YouTube allows `start` and `end` parameter options - it wouldn't make sense to set these for every video on your site!
 
-You can override the global defaults in the URL request e.g. https://www.youtube.com/watch?v=ScMzIvxBSi4&controls=0&color=white. The exception to this is YouTube's privacy-enhanced mode, which is not a paramater option, but a different URL.
+You can override the global defaults in the URL request e.g. https://www.youtube.com/watch?v=ScMzIvxBSi4&controls=0&color=white. The exception to this is YouTube's privacy-enhanced mode, which is not a parameter option, but a different URL.
 
-If multi-language support is enabled, language paramaters will default to the name of the user's language e.g. https://www.youtube.com/watch?v=ScMzIvxBSi4&cc_lang_pref=fr&hl=fr.
+If multi-language support is enabled, language parameters will default to the name of the user's language e.g. https://www.youtube.com/watch?v=ScMzIvxBSi4&cc_lang_pref=fr&hl=fr. This does not apply if the current language is the site's default language.
 
 More information on these options can be found here: [YouTube](https://developers.google.com/youtube/player_parameters#Parameters) / [Vimeo](https://developer.vimeo.com/api/oembed/videos#table-2)
 

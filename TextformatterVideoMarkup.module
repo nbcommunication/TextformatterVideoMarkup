@@ -27,12 +27,12 @@ class TextformatterVideoMarkup extends Textformatter implements ConfigurableModu
 	public static function getModuleInfo() {
 		return [
 			'title' => 'Video markup for YouTube/Vimeo',
-			'version' => 105,
+			'version' => 110,
 			'summary' => 'Render oEmbed data from YouTube/Vimeo URLs.',
 			'author' => 'nbcommunication',
 			'href' => 'https://github.com/nbcommunication/TextformatterVideoMarkup',
 			'icon' => 'video-camera',
-			'requires' => 'ProcessWire>=3.0.148,PHP>=7',
+			'requires' => 'ProcessWire>=3.0.148,PHP>=7.4',
 		];
 	}
 
@@ -158,9 +158,11 @@ class TextformatterVideoMarkup extends Textformatter implements ConfigurableModu
 			}
 		}
 
-		// Apply current language if multi-language enabled
+		// Apply current language if multi-language enabled (and not the default language,
+		// since its name - conventionally "default" - is not a usable language code)
 		if($this->wire()->languages !== null) {
-			$lang = $this->wire()->user->language->name;
+			$userLanguage = $this->wire()->user->language;
+			$lang = ($userLanguage && !$userLanguage->isDefault) ? $userLanguage->name : '';
 			if($lang) {
 				foreach([
 					'yt' => ['cc_lang_pref', 'hl'],
@@ -291,6 +293,12 @@ class TextformatterVideoMarkup extends Textformatter implements ConfigurableModu
 				$data['video_id'] = end($segments);
 			}
 
+			// Defensive defaults, as these may not always be present (e.g. no query
+			// string on the source URL, or fields omitted from the oEmbed response)
+			$data['video_id'] = $data['video_id'] ?? '';
+			$data['params'] = $data['params'] ?? '';
+			$data['title'] = $data['title'] ?? '';
+
 			// lite facade
 			$type = $isYoutube ? 'youtube' : 'vimeo';
 			$data['lite'] = "<lite-$type videoid=\"{$data['video_id']}\" params=\"{$data['params']}\" playlabel=\"{$this->_('Play')}: {$data['title']}\"></lite-$type>";
@@ -317,12 +325,12 @@ class TextformatterVideoMarkup extends Textformatter implements ConfigurableModu
 	 */
 	protected function renderVimeo(&$str) {
 
-		if(strpos($str, '://vimeo.com/') === false) return;
+		if(strpos($str, 'vimeo.com/') === false) return;
 
 		if(!preg_match_all(
 			'#' .
 			($this->html ? '<p>' : '') .
-			'\s*(https?://vimeo.com/\S*)' .
+			'\s*(https?://(?:www\.)?vimeo\.com/\S*)' .
 			($this->html ? '</p>' : '') .
 			'#',
 			$str,
@@ -330,7 +338,7 @@ class TextformatterVideoMarkup extends Textformatter implements ConfigurableModu
 		)) return;
 
 		foreach($matches[0] as $key => $line) {
-			$url = $this->applyVimeoOptions($matches[1][$key], 'vm');
+			$url = $this->applyVimeoOptions($matches[1][$key]);
 			$str = $this->replace($str, $this->getData('vm', $url), $line);
 		}
 	}
@@ -346,15 +354,15 @@ class TextformatterVideoMarkup extends Textformatter implements ConfigurableModu
 	protected function renderYoutube(&$str) {
 
 		// perform a strpos fast check before performing regex check
-		if(strpos($str, '://www.youtube.com/watch') === false
-			&& strpos($str, '://www.youtube.com/v/') === false
-			&& strpos($str, '://www.youtube.com/shorts/') === false
-			&& strpos($str, '://youtu.be/') === false) return;
+		if(strpos($str, 'youtube.com/watch') === false
+			&& strpos($str, 'youtube.com/v/') === false
+			&& strpos($str, 'youtube.com/shorts/') === false
+			&& strpos($str, 'youtu.be/') === false) return;
 
 		if(!preg_match_all(
 			'#' .
 			($this->html ? '<p>' : '') .
-			'\s*(https?://(?:www\.)?youtu(?:.be|be.com)+/(?:watch/?\?v=|v/|shorts/)?([^\s&<\'"]+)(&[-_,.=&;a-zA-Z0-9]*)?).*?' .
+			'\s*(https?://(?:www\.)?youtu(?:\.be|be\.com)+/(?:watch/?\?v=|v/|shorts/)?([^\s&<\'"]+)(&[-_,.=&;a-zA-Z0-9]*)?).*?' .
 			($this->html ? '</p>' : '') .
 			'#',
 			$str,
@@ -363,7 +371,7 @@ class TextformatterVideoMarkup extends Textformatter implements ConfigurableModu
 
 		foreach($matches[0] as $key => $line) {
 			$originalUrl = $matches[1][$key];
-			$url = $this->applyYoutubeOptions($originalUrl, 'yt');
+			$url = $this->applyYoutubeOptions($originalUrl);
 			$str = $this->replace($str, $this->getData('yt', $url, $originalUrl), $line);
 		}
 	}
@@ -381,7 +389,9 @@ class TextformatterVideoMarkup extends Textformatter implements ConfigurableModu
 		return str_replace(
 			$line,
 			empty($data) ?
-				'' :  // no data, so return empty string
+				// No data returned - render the configured emptyValue (also allows
+				// the render() hook to customise the empty-value output, per README).
+				$this->render($this->markupTpl, false, $line) :
 				$this->render(($this->markupTpl ?: ($data['debug'] ? '{debug}' : '{html}')), $data, $line),
 			$str
 		);
