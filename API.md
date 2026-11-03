@@ -28,6 +28,8 @@ the module instance, e.g. `$modules->get('TextformatterVideoMarkup')->maxWidth`.
 | `maxWidth` | int | `1280` | Sent as `maxwidth` to the oEmbed endpoint request. |
 | `maxHeight` | int | `720` | Sent as `maxheight` to the oEmbed endpoint request (YouTube only sends `format=json` in addition). |
 | `emptyValue` | string | `''` | Rendered (via `___render()`) when no oEmbed data is returned, e.g. private/deleted video. Supports `{url}` and `{link}` placeholders (see below). |
+| `youtubeApiKey` | string | `''` | YouTube Data API v3 key. If set, YouTube `$data` is extended with Data API fields (see "YouTube Data API" below). Deliberately **not** `yt_`-prefixed, so it is never sent as an embed URL parameter. |
+| `youtubeApiCacheExpiry` | int | `TextformatterVideoMarkup::youtubeApiCacheExpiry` (2592000, 30 days) | Seconds to cache each Data API response for. Options: hourly/daily/weekly/30 days. 30 days is the YouTube API Services terms' maximum. |
 
 Additionally, every YouTube (`yt_*`) and Vimeo (`vm_*`) option key listed
 below is itself a config property, e.g. `$module->yt_autoplay`,
@@ -118,6 +120,53 @@ Additional keys added by this module before `render()` is called:
 | `params` | The extra query string (beyond the video ID/URL) from the original requested URL, if any. |
 | `lite` | Pre-rendered `<lite-youtube>`/`<lite-vimeo>` facade markup string (see README "Facades"). Built from `video_id`, `params`, and a translated "Play: {title}" label. |
 | `debug` | HTML table of all `$data` key/value pairs (via `MarkupAdminDataTable`), only populated if `$config->debug` is true; otherwise `''`. |
+
+### YouTube Data API (`youtubeApiKey` set, v111+)
+
+For YouTube URLs with a resolvable `video_id`, `getYoutubeApiData()` requests
+`https://www.googleapis.com/youtube/v3/videos` with every part available to an
+API key (`TextformatterVideoMarkup::youtubeApiParts`: `snippet`,
+`contentDetails`, `status`, `statistics`, `player`, `topicDetails`,
+`recordingDetails`, `liveStreamingDetails`, `localizations`). The key is sent
+in the `X-Goog-Api-Key` header, never in the URL.
+
+`parseYoutubeApiData()` flattens the resource via `flattenYoutubeApiData()`:
+
+- Part names are dropped; camelCase keys become snake_case and nested keys are
+  joined with `_` (`snippet.thumbnails.maxres.url` → `thumbnails_maxres_url`,
+  `statistics.viewCount` → `view_count`). `localizations` keeps its prefix
+  (`localizations_fr_title`); non-camelCase keys such as language codes are
+  left as they are.
+- Lists of scalars are comma-separated (`tags`, `topic_categories`,
+  `region_restriction_blocked`); booleans become `1`/`0`; empty objects become `''`.
+- All string values are entity encoded, apart from `embed_html`.
+- Fields not present in the response (e.g. `thumbnails_maxres_*`,
+  `live_streaming_details` fields, `like_count` when hidden) are simply absent,
+  so their placeholders are left as literal text. Check `{debug}`.
+
+Normalised/derived keys (matching Vimeo's oEmbed keys where they overlap):
+
+| Key | Description |
+| --- | --- |
+| `duration` | Seconds (int), as Vimeo returns. |
+| `duration_iso` | The API's ISO 8601 duration, e.g. `PT3M33S`. |
+| `duration_formatted` | `m:ss` / `h:mm:ss`. |
+| `upload_date` | `Y-m-d H:i:s` (UTC), Vimeo's format. |
+| `published_at` | The API's ISO 8601 publish date. |
+| `published_timestamp` | Unix timestamp (int). |
+| `channel_url` | `https://www.youtube.com/channel/{channel_id}`. |
+| `youtube` | The raw API video resource (array - not a placeholder, but available to `render()` hooks). |
+
+API keys are merged with `+=`, so existing oEmbed keys (`title`,
+`thumbnail_url`, etc.) win. The debug table renders array values as JSON.
+
+Raw API responses are cached per video under the name `yt-api-{video_id}`
+(`TextformatterVideoMarkup::youtubeApiCachePrefix`) for
+`youtubeApiCacheExpiry` seconds. Failures (including an empty `items` list)
+are logged to the `textformatter-video-markup` log and cached as
+`['error' => httpCode]` for an hour; in that case no API keys are added. The
+"Clear Cache" button clears these too, but they are excluded from the cached
+video count.
 
 Data is cached **permanently** (`WireCache::expireNever`) keyed by
 `md5($endpoint)` (the full oEmbed request URL including maxwidth/maxheight

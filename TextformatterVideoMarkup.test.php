@@ -231,6 +231,21 @@ class WireTest_TextformatterVideoMarkup extends WireTest {
 			count($undefinedKeyWarnings)
 		);
 
+		// --- YouTube Data API extends the oEmbed data (only if a key is configured) ---
+
+		if($mod->youtubeApiKey) {
+			$mod->markupTpl = '{duration}|{channel_id}|{html}';
+			$value = self::testYoutubeUrl;
+			$mod->formatValue($page, $plainField, $value);
+			$parts = explode('|', $value, 3);
+			$this->check('formatValue() adds YouTube Data API duration (seconds)', true, (int) $parts[0] > 0);
+			$this->check('formatValue() adds YouTube Data API channel_id', true, isset($parts[1]) && strpos($parts[1], 'UC') === 0);
+			$this->check('formatValue() does not leak the API key into the embed', false, strpos($value, $mod->youtubeApiKey) !== false);
+			$mod->markupTpl = '{html}';
+		} else {
+			$this->li('Skipped YouTube Data API tests (no youtubeApiKey configured)');
+		}
+
 		// Restore known-good config before finish() runs
 		$mod->yt_rel = '0';
 		$mod->yt_modestbranding = '1';

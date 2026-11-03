@@ -18,6 +18,8 @@ class TextformatterVideoMarkupConfig extends ModuleConfig {
 			'emptyValue' => '',
 			'maxWidth' => 1280,
 			'maxHeight' => 720,
+			'youtubeApiKey' => '',
+			'youtubeApiCacheExpiry' => TextformatterVideoMarkup::youtubeApiCacheExpiry,
 		];
 	}
 
@@ -122,6 +124,40 @@ class TextformatterVideoMarkupConfig extends ModuleConfig {
 		$yt->icon = 'youtube';
 		$yt->notes = sprintf($this->_('More information: %s'), "[$info]($info)");
 		$yt->collapsed = 1;
+
+		// YouTube Data API key
+		// Note: not prefixed with `yt_`, as those keys are passed to the embed URL
+		$apiInfo = 'https://developers.google.com/youtube/v3/getting-started';
+		$yt->add([
+			'type' => 'text',
+			'name' => 'youtubeApiKey',
+			'label' => $this->_('YouTube Data API Key'),
+			'description' => $this->_('If an API key is provided, the oEmbed data will be extended with data from the YouTube Data API (v3), such as the description, publish date, duration and statistics.'),
+			'notes' => implode("\n", [
+				$this->_('Restrict the key to the YouTube Data API v3 (and ideally your server IP) in the Google Cloud Console.'),
+				sprintf($this->_('More information: %s'), "[$apiInfo]($apiInfo)"),
+			]),
+			'icon' => 'key',
+			'columnWidth' => 50,
+		]);
+
+		$yt->add([
+			'type' => 'select',
+			'name' => 'youtubeApiCacheExpiry',
+			'label' => $this->_('YouTube Data API Cache'),
+			'description' => $this->_('How long YouTube Data API responses are cached for. Statistics such as the view count will only update when the cache expires.'),
+			'notes' => $this->_('The YouTube API Services terms require stored API data to be refreshed at least every 30 days.'),
+			'icon' => 'clock-o',
+			'columnWidth' => 50,
+			'required' => true,
+			'options' => [
+				WireCache::expireHourly => $this->_('Hourly'),
+				WireCache::expireDaily => $this->_('Daily'),
+				WireCache::expireWeekly => $this->_('Weekly'),
+				TextformatterVideoMarkup::youtubeApiCacheExpiry => $this->_('30 days'),
+			],
+			'showIf' => 'youtubeApiKey!=""',
+		]);
 
 		$iso = 'http://www.loc.gov/standards/iso639-2/php/code_list.php';
 		$lang = $this->_('If multi-language support is installed, this will default to the `name` of the current user language.');
@@ -316,8 +352,10 @@ class TextformatterVideoMarkupConfig extends ModuleConfig {
 		$inputfields->add($vm);
 
 		// Currently cached queries list
-		$query = $this->wire('database')->prepare('SELECT name FROM caches WHERE name LIKE :name');
+		// (excluding YouTube Data API responses, which are cached per video in addition to the oEmbed data)
+		$query = $this->wire('database')->prepare('SELECT name FROM caches WHERE name LIKE :name AND name NOT LIKE :api');
 		$query->bindValue(':name', wireClassName($tf, false) . '__%');
+		$query->bindValue(':api', wireClassName($tf, false) . '__' . $tf::youtubeApiCachePrefix . '%');
 		$query->execute();
 		$c = $query->rowCount();
 		if($c) {

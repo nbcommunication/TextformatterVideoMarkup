@@ -44,39 +44,12 @@ These additional placeholders are also available:
 - `params`: The query string extracted from the requested URL.
 - `lite`: A pre-rendered facade. See *Facades* below.
 
-#### Debugging
-If `$config->debug` is set to `true`, you can output a table of the data returned by the oEmbed endpoint using the `{debug}` placeholder.
+#### YouTube Data API
+Adding a [YouTube Data API (v3)](https://developers.google.com/youtube/v3/getting-started) key to the *YouTube Options* extends the oEmbed data for YouTube videos with the placeholders listed above. Restrict the key to the YouTube Data API v3 in the Google Cloud Console. Requests are made server-side, so restrict it by IP address rather than HTTP referrer. The key is sent in a request header, so it never appears in a URL.
 
-#### Example - Thumbnail image with UIkit Lightbox
-```html
-<figure data-uk-lightbox>
-    <a href="{url}" data-poster="{thumbnail_url}" data-attrs="width: {width}; height: {height}">
-        <img src="{thumbnail_url}" alt="{title}">
-    </a>
-</figure>
-{debug}
-```
-*In debug mode, a table of the oEmbed data is appended.*
+API responses are cached separately from the oEmbed data, for the period set in *YouTube Data API Cache*. The default is 30 days, the longest the [YouTube API Services terms](https://developers.google.com/youtube/terms/developer-policies) allow API data to be stored without being refreshed. Set a shorter period if you want statistics like the view count to stay current. Each video costs 1 unit of the daily API quota per cache refresh.
 
-### Video Options
-- Max Width: The video width.
-- Max Height: The video height.
-- Empty Value: The value that will be rendered if no response is received from the oEmbed endpoint.
-
-For the empty value, the following placeholders can be used:
-- `{url}`: Outputs the requested URL.
-- `{link}`: Outputs the requested URL as a link.
-
-### YouTube/Vimeo Options
-These allow global configuration of videos. Not all options are available, just those that could be useful to set globally. For example, YouTube allows `start` and `end` parameter options - it wouldn't make sense to set these for every video on your site!
-
-You can override the global defaults in the URL request e.g. https://www.youtube.com/watch?v=ScMzIvxBSi4&controls=0&color=white. The exception to this is YouTube's privacy-enhanced mode, which is not a parameter option, but a different URL.
-
-If multi-language support is enabled, language parameters will default to the name of the user's language e.g. https://www.youtube.com/watch?v=ScMzIvxBSi4&cc_lang_pref=fr&hl=fr. This does not apply if the current language is the site's default language.
-
-More information on these options can be found here: [YouTube](https://developers.google.com/youtube/player_parameters#Parameters) / [Vimeo](https://developer.vimeo.com/api/oembed/videos#table-2)
-
-Note: YouTube's `rel=0` doesn't behave the way it used to - see the link above for more information.
+Failed requests (e.g. an invalid key or exceeded quota) are logged to the `textformatter-video-markup` log and cached for an hour. During that time the oEmbed data is rendered without the extra placeholders.
 
 ### Facades
 The preferred way of loading 3rd-party resources is via a facade: [https://developer.chrome.com/docs/lighthouse/performance/third-party-facades](https://developer.chrome.com/docs/lighthouse/performance/third-party-facades).

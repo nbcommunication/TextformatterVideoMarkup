@@ -27,7 +27,7 @@ class TextformatterVideoMarkup extends Textformatter implements ConfigurableModu
 	public static function getModuleInfo() {
 		return [
 			'title' => 'Video markup for YouTube/Vimeo',
-			'version' => 110,
+			'version' => 111,
 			'summary' => 'Render oEmbed data from YouTube/Vimeo URLs.',
 			'author' => 'nbcommunication',
 			'href' => 'https://github.com/nbcommunication/TextformatterVideoMarkup',
@@ -37,6 +37,43 @@ class TextformatterVideoMarkup extends Textformatter implements ConfigurableModu
 	}
 
 	const noCookie = 'noCookie';
+
+	/**
+	 * YouTube Data API v3 videos endpoint
+	 *
+	 */
+	const youtubeApiEndpoint = 'https://www.googleapis.com/youtube/v3/videos';
+
+	/**
+	 * Cache name prefix for YouTube Data API responses
+	 *
+	 */
+	const youtubeApiCachePrefix = 'yt-api-';
+
+	/**
+	 * Default cache expiry for YouTube Data API responses (30 days)
+	 *
+	 */
+	const youtubeApiCacheExpiry = 2592000;
+
+	/**
+	 * YouTube Data API video resource parts requested
+	 *
+	 * All parts that are available with an API key (fileDetails, processingDetails
+	 * and suggestions are only available to the video owner via OAuth).
+	 *
+	 */
+	const youtubeApiParts = [
+		'snippet',
+		'contentDetails',
+		'status',
+		'statistics',
+		'player',
+		'topicDetails',
+		'recordingDetails',
+		'liveStreamingDetails',
+		'localizations',
+	];
 
 	/**
 	 * The field
@@ -299,13 +336,20 @@ class TextformatterVideoMarkup extends Textformatter implements ConfigurableModu
 			$data['params'] = $data['params'] ?? '';
 			$data['title'] = $data['title'] ?? '';
 
+			// Extend with YouTube Data API data if an API key has been provided
+			if($isYoutube && $data['video_id'] && $this->youtubeApiKey) {
+				$data += $this->getYoutubeApiData($data['video_id']);
+			}
+
 			// lite facade
 			$type = $isYoutube ? 'youtube' : 'vimeo';
 			$data['lite'] = "<lite-$type videoid=\"{$data['video_id']}\" params=\"{$data['params']}\" playlabel=\"{$this->_('Play')}: {$data['title']}\"></lite-$type>";
 
 			if($this->wire()->config->debug) {
 				$table = $this->wire()->modules->get('MarkupAdminDataTable');
-				foreach($data as $key => $value) $table->row([$key, $value]);
+				foreach($data as $key => $value) {
+					$table->row([$key, is_array($value) ? '<pre>' . htmlspecialchars(json_encode($value, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)) . '</pre>' : $value]);
+				}
 				$data['debug'] = "<h3>$url</h3>" . $table->render();
 			} else {
 				$data['debug'] = '';
@@ -313,6 +357,146 @@ class TextformatterVideoMarkup extends Textformatter implements ConfigurableModu
 		}
 
 		return is_array($data) ? $data : [];
+	}
+
+	/**
+	 * Get additional data for a YouTube video from the YouTube Data API
+	 *
+	 * Requires the `youtubeApiKey` config value to be set. The key is sent as a
+	 * header, so it never appears in a URL. Responses are cached for the duration
+	 * set by `youtubeApiCacheExpiry` (default 30 days, the maximum the YouTube API
+	 * Services terms allow API data to be stored without being refreshed).
+	 * Failed requests are cached for an hour to avoid repeatedly hitting the API.
+	 *
+	 * @param string $videoId
+	 * @return array
+	 *
+	 */
+	protected function getYoutubeApiData($videoId) {
+
+		$cache = $this->wire()->cache;
+		$name = self::youtubeApiCachePrefix . $videoId;
+		$item = $cache->getFor($this, $name);
+
+		if(!is_array($item)) {
+
+			$http = $this->wire(new WireHttp());
+			$http->setHeader('X-Goog-Api-Key', $this->youtubeApiKey);
+			$response = $http->getJSON(self::youtubeApiEndpoint . '?' . http_build_query([
+				'id' => $videoId,
+				'part' => implode(',', self::youtubeApiParts),
+			]));
+
+			if(is_array($response) && isset($response['items'][0]) && is_array($response['items'][0])) {
+				$item = $response['items'][0];
+				$expire = (int) $this->youtubeApiCacheExpiry ?: self::youtubeApiCacheExpiry;
+			} else {
+				$this->wire()->log->save(
+					'textformatter-video-markup',
+					is_array($response) ?
+						sprintf('YouTube Data API returned no data for video %s', $videoId) :
+						sprintf('YouTube Data API request failed for video %s (HTTP %s)', $videoId, $http->getHttpCode())
+				);
+				$item = ['error' => (int) $http->getHttpCode() ?: 1];
+				$expire = WireCache::expireHourly;
+			}
+
+			$cache->saveFor($this, $name, $item, $expire);
+		}
+
+		if(empty($item['id'])) return [];
+
+		return $this->parseYoutubeApiData($item);
+	}
+
+	/**
+	 * Convert a YouTube Data API video resource into flat placeholder data
+	 *
+	 * Every field is flattened to a snake_case key (e.g. `statistics.viewCount`
+	 * becomes `view_count`, `snippet.thumbnails.maxres.url` becomes `thumbnails_maxres_url`).
+	 * Lists of values are comma-separated, booleans are 0/1, and string values are
+	 * entity encoded (other than `embed_html`). The raw resource is available as `youtube`.
+	 *
+	 * Some keys are normalised to match Vimeo's oEmbed data, so the same
+	 * placeholders work for both providers: `duration` (seconds), `upload_date`
+	 * (Y-m-d H:i:s, UTC) and `description`.
+	 *
+	 * @param array $item
+	 * @return array
+	 *
+	 */
+	protected function parseYoutubeApiData(array $item) {
+
+		$data = [];
+		foreach(self::youtubeApiParts as $part) {
+			if(!isset($item[$part]) || !is_array($item[$part])) continue;
+			$data += $this->flattenYoutubeApiData($item[$part], ($part === 'localizations' ? 'localizations_' : ''));
+		}
+
+		$sanitizer = $this->wire()->sanitizer;
+		foreach($data as $key => $value) {
+			if(is_string($value) && $key !== 'embed_html') $data[$key] = $sanitizer->entities($value);
+		}
+
+		// Duration: seconds (as Vimeo), ISO 8601 and formatted
+		$seconds = 0;
+		$data['duration_iso'] = $data['duration'] ?? '';
+		if($data['duration_iso']) {
+			try {
+				$interval = new \DateInterval($data['duration_iso']);
+				$seconds = ($interval->d * 86400) + ($interval->h * 3600) + ($interval->i * 60) + $interval->s;
+			} catch(\Exception $e) {
+				$seconds = 0;
+			}
+		}
+		$data['duration'] = $seconds;
+		$data['duration_formatted'] = $seconds ? (
+			$seconds >= 3600 ?
+				sprintf('%d:%02d:%02d', floor($seconds / 3600), floor(($seconds % 3600) / 60), $seconds % 60) :
+				sprintf('%d:%02d', floor($seconds / 60), $seconds % 60)
+		) : '';
+
+		// Publish date: ISO 8601 (published_at), timestamp, and Vimeo's upload_date format
+		$timestamp = !empty($data['published_at']) ? (int) strtotime($data['published_at']) : 0;
+		$data['published_timestamp'] = $timestamp;
+		$data['upload_date'] = $timestamp ? gmdate('Y-m-d H:i:s', $timestamp) : '';
+
+		$data['channel_url'] = !empty($data['channel_id']) ? "https://www.youtube.com/channel/{$data['channel_id']}" : '';
+
+		// The raw API resource, for use in render() hooks
+		$data['youtube'] = $item;
+
+		return $data;
+	}
+
+	/**
+	 * Flatten a YouTube Data API array to snake_case keys with scalar values
+	 *
+	 * @param array $values
+	 * @param string $prefix
+	 * @return array
+	 *
+	 */
+	protected function flattenYoutubeApiData(array $values, $prefix = '') {
+		$data = [];
+		foreach($values as $key => $value) {
+			// camelCase to snake_case (other keys, e.g. language codes, are left as they are)
+			if(preg_match('/^[a-z][a-zA-Z0-9]*$/', $key)) $key = strtolower(preg_replace('/[A-Z]/', '_$0', $key));
+			$key = $prefix . $key;
+			if(is_array($value)) {
+				$isList = $value === array_values($value) && !count(array_filter($value, 'is_array'));
+				if($isList) {
+					$data[$key] = implode(', ', array_map(function($v) {
+						return is_bool($v) ? (int) $v : $v;
+					}, $value));
+				} else {
+					$data += $this->flattenYoutubeApiData($value, "{$key}_");
+				}
+			} else {
+				$data[$key] = is_bool($value) ? (int) $value : $value;
+			}
+		}
+		return $data;
 	}
 
 	/**
