@@ -15,6 +15,7 @@ class WireTest_TextformatterVideoMarkup extends WireTest {
 
 	const testYoutubeUrl = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ';
 	const testYoutubeShortUrl = 'https://youtu.be/dQw4w9WgXcQ';
+	const testYoutubeShortsUrl = 'https://www.youtube.com/shorts/dQw4w9WgXcQ';
 	const testYoutubeBogusUrl = 'https://www.youtube.com/watch?v=thisIsNotARealVideoId000';
 
 	// Big Buck Bunny - a long-standing, stable Vimeo demo/test video
@@ -44,8 +45,8 @@ class WireTest_TextformatterVideoMarkup extends WireTest {
 	 * @var array
 	 */
 	protected $configKeys = [
-		'yt_rel', 'yt_modestbranding', 'yt_noCookie',
-		'emptyValue', 'markupTpl',
+		'yt_rel', 'yt_modestbranding', 'yt_noCookie', 'vm_dnt',
+		'emptyValue', 'markupTpl', 'oembedCacheExpiry',
 	];
 
 	/**
@@ -231,6 +232,127 @@ class WireTest_TextformatterVideoMarkup extends WireTest {
 			count($undefinedKeyWarnings)
 		);
 
+		// --- Vimeo upload_date is also available as an ISO 8601 date and timestamp ---
+
+		$mod->markupTpl = '{upload_date}|{published_at}|{published_timestamp}';
+		$value = self::testVimeoUrl;
+		$mod->formatValue($page, $plainField, $value);
+		$parts = explode('|', $value);
+		$this->check('formatValue() adds Vimeo published_at (ISO 8601)', '2008-05-29T05:08:02+00:00', $parts[1] ?? '');
+		$this->check('formatValue() adds Vimeo published_timestamp', strtotime('2008-05-29 05:08:02 UTC'), (int) ($parts[2] ?? 0));
+		$mod->markupTpl = '{html}';
+
+		// Helpers for reaching protected module methods and the cache table
+		$cache = $this->wire()->cache;
+		$call = function(\Closure $fn) use ($mod) {
+			return \Closure::bind($fn, $mod, get_class($mod))();
+		};
+		$cacheName = function($provider, $url) use ($call) {
+			return $call(function() use ($provider, $url) {
+				$url = $provider === 'yt' ? $this->applyYoutubeOptions($url) : $this->applyVimeoOptions($url);
+				return $this->getOembedCacheName($this->getOembedEndpoint($provider, $url));
+			});
+		};
+		$cacheExpires = function($name) use ($mod) {
+			$query = $this->wire()->database->prepare('SELECT expires FROM caches WHERE name=:name');
+			$query->bindValue(':name', wireClassName($mod, false) . "__$name");
+			$query->execute();
+			$expires = $query->fetchColumn();
+			$query->closeCursor();
+			return $expires === false ? null : $expires;
+		};
+		$expiresIn = function($name) use ($cacheExpires) {
+			$expires = $cacheExpires($name);
+			return $expires ? strtotime($expires) - time() : 0;
+		};
+
+		// --- Options are added to the iframe src only (not e.g. its title) ---
+
+		$mod->vm_dnt = '1';
+		$value = self::testVimeoUrl;
+		$mod->formatValue($page, $plainField, $value);
+		$iframe = $this->extractIframeMarkup($value);
+		preg_match('/\ssrc="([^"]*)"/', $iframe, $src);
+		preg_match('/\stitle="([^"]*)"/', $iframe, $title);
+		$this->check('formatValue() adds options to the iframe src', true, strpos($src[1] ?? '', 'dnt=1') !== false);
+		$this->check('formatValue() does not add options to the iframe title', 'Big Buck Bunny', $title[1] ?? '');
+		$mod->vm_dnt = '';
+
+		// --- youtu.be URLs use the nocookie domain, even with no other options set ---
+
+		$mod->yt_noCookie = '1';
+		$value = self::testYoutubeShortUrl;
+		$mod->formatValue($page, $plainField, $value);
+		$iframe = $this->extractIframeMarkup($value);
+		$this->check('formatValue() youtu.be render uses nocookie domain with no other options', true, strpos($iframe, 'youtube-nocookie.com') !== false);
+		$mod->yt_noCookie = '';
+
+		// --- YouTube Shorts URLs ---
+
+		$value = self::testYoutubeShortsUrl;
+		$mod->formatValue($page, $plainField, $value);
+		$iframe = $this->extractIframeMarkup($value);
+		$this->check('formatValue() renders YouTube shorts URL to an iframe', true, strpos($iframe, '<iframe') !== false);
+
+		// --- emptyValue {link} renders a link (in a paragraph in HTML mode) ---
+
+		$mod->emptyValue = '{link}';
+		$bogus = self::testYoutubeBogusUrl;
+		$value = "<p>$bogus</p>";
+		$mod->formatValue($page, $htmlField, $value);
+		$this->check(
+			'formatValue() (HTML mode) renders emptyValue {link} as a link in a paragraph',
+			"<p><a href=$bogus target=_blank rel=noopener>$bogus</a></p>",
+			$value
+		);
+		$mod->emptyValue = '';
+
+		// --- Failed oEmbed requests are cached for an hour ---
+
+		$name = $cacheName('yt', self::testYoutubeBogusUrl);
+		$cache->deleteFor($mod, $name);
+		$mod->emptyValue = 'NO VIDEO';
+		$value = self::testYoutubeBogusUrl;
+		$mod->formatValue($page, $plainField, $value);
+		$cached = $cache->getFor($mod, $name);
+		$this->check('formatValue() caches a failed oEmbed request as an error', true, is_array($cached) && !empty($cached['error']));
+		$seconds = $expiresIn($name);
+		$this->check('formatValue() caches a failed oEmbed request for an hour', true, $seconds > 3500 && $seconds <= 3600);
+		$value = self::testYoutubeBogusUrl;
+		$mod->formatValue($page, $plainField, $value);
+		$this->check('formatValue() renders emptyValue for a cached failure', 'NO VIDEO', $value);
+		$mod->emptyValue = '';
+
+		// --- oembedCacheExpiry sets the oEmbed cache expiry ---
+
+		$name = $cacheName('vm', self::testVimeoUrl);
+
+		$mod->oembedCacheExpiry = WireCache::expireHourly;
+		$cache->deleteFor($mod, $name);
+		$value = self::testVimeoUrl;
+		$mod->formatValue($page, $plainField, $value);
+		$seconds = $expiresIn($name);
+		$this->check('formatValue() caches oEmbed data for oembedCacheExpiry (hourly)', true, $seconds > 3500 && $seconds <= 3600);
+
+		$mod->oembedCacheExpiry = WireCache::expireNever;
+		$cache->deleteFor($mod, $name);
+		$value = self::testVimeoUrl;
+		$mod->formatValue($page, $plainField, $value);
+		$this->check('formatValue() caches oEmbed data permanently by default', WireCache::expireNever, $cacheExpires($name));
+
+		// --- oEmbed text values are entity encoded, the embed html is not ---
+
+		$encoded = $call(function() {
+			return $this->encodeData([
+				'title' => 'Tom & "Jerry" <3',
+				'html' => '<iframe src="https://example.com/?a=1&b=2"></iframe>',
+				'width' => 640,
+			], ['html']);
+		});
+		$this->check('encodeData() entity encodes string values', 'Tom &amp; &quot;Jerry&quot; &lt;3', $encoded['title']);
+		$this->check('encodeData() leaves skipped keys as they are', '<iframe src="https://example.com/?a=1&b=2"></iframe>', $encoded['html']);
+		$this->check('encodeData() leaves non-string values as they are', 640, $encoded['width']);
+
 		// --- YouTube Data API extends the oEmbed data (only if a key is configured) ---
 
 		if($mod->youtubeApiKey) {
@@ -241,6 +363,44 @@ class WireTest_TextformatterVideoMarkup extends WireTest {
 			$this->check('formatValue() adds YouTube Data API duration (seconds)', true, (int) $parts[0] > 0);
 			$this->check('formatValue() adds YouTube Data API channel_id', true, isset($parts[1]) && strpos($parts[1], 'UC') === 0);
 			$this->check('formatValue() does not leak the API key into the embed', false, strpos($value, $mod->youtubeApiKey) !== false);
+
+			// Normalised date and duration keys are consistent
+			$mod->markupTpl = '{upload_date}|{published_at}|{published_timestamp}|{duration}|{duration_formatted}';
+			$value = self::testYoutubeUrl;
+			$mod->formatValue($page, $plainField, $value);
+			$parts = array_pad(explode('|', $value), 5, '');
+			$timestamp = (int) $parts[2];
+			$this->check('formatValue() YouTube upload_date matches published_timestamp', $timestamp, (int) strtotime("$parts[0] UTC"));
+			$this->check('formatValue() YouTube published_at matches published_timestamp', $timestamp, (int) strtotime($parts[1]));
+			$seconds = (int) $parts[3];
+			$this->check(
+				'formatValue() YouTube duration_formatted matches duration',
+				$seconds >= 3600 ?
+					sprintf('%d:%02d:%02d', floor($seconds / 3600), floor(($seconds % 3600) / 60), $seconds % 60) :
+					sprintf('%d:%02d', floor($seconds / 60), $seconds % 60),
+				$parts[4]
+			);
+
+			// An invalid key falls back to the oEmbed data, and the failure is cached
+			$apiCacheName = TextformatterVideoMarkup::youtubeApiCachePrefix . 'dQw4w9WgXcQ';
+			$apiKey = $mod->youtubeApiKey;
+			$mod->youtubeApiKey = 'invalid-wiretest-key';
+			$cache->deleteFor($mod, $apiCacheName);
+			try {
+				$mod->markupTpl = '{channel_id}|{title}';
+				$value = self::testYoutubeUrl;
+				$mod->formatValue($page, $plainField, $value);
+				$parts = explode('|', $value, 2);
+				$this->check('formatValue() with an invalid API key leaves API placeholders unreplaced', '{channel_id}', $parts[0]);
+				$this->check('formatValue() with an invalid API key still renders oEmbed data', true, isset($parts[1]) && $parts[1] !== '' && $parts[1] !== '{title}');
+				$cached = $cache->getFor($mod, $apiCacheName);
+				$this->check('formatValue() caches a failed YouTube Data API request as an error', true, is_array($cached) && !empty($cached['error']));
+			} finally {
+				// Restore the key and clear the cached failure, so the real data is fetched again
+				$mod->youtubeApiKey = $apiKey;
+				$cache->deleteFor($mod, $apiCacheName);
+			}
+
 			$mod->markupTpl = '{html}';
 		} else {
 			$this->li('Skipped YouTube Data API tests (no youtubeApiKey configured)');

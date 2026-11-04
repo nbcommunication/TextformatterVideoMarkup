@@ -18,6 +18,7 @@ class TextformatterVideoMarkupConfig extends ModuleConfig {
 			'emptyValue' => '',
 			'maxWidth' => 1280,
 			'maxHeight' => 720,
+			'oembedCacheExpiry' => WireCache::expireNever,
 			'youtubeApiKey' => '',
 			'youtubeApiCacheExpiry' => TextformatterVideoMarkup::youtubeApiCacheExpiry,
 		];
@@ -112,6 +113,25 @@ class TextformatterVideoMarkupConfig extends ModuleConfig {
 			'label' => $this->_('Empty Value'),
 			'description' => $this->_('This is the value that will be rendered if no response is received from the oEmbed endpoint.'),
 			'icon' => 'exclamation-circle',
+			'collapsed' => 2,
+		]);
+
+		// oEmbed Cache
+		$options->add([
+			'type' => 'select',
+			'name' => 'oembedCacheExpiry',
+			'label' => $this->_('oEmbed Cache'),
+			'description' => $this->_('How long oEmbed responses are cached for. Failed requests are always cached for an hour.'),
+			'notes' => $this->_('Changes only apply to newly cached videos. Clear the cache to apply them to all videos.'),
+			'icon' => 'clock-o',
+			'required' => true,
+			'options' => [
+				WireCache::expireNever => $this->_('Never expire'),
+				WireCache::expireHourly => $this->_('Hourly'),
+				WireCache::expireDaily => $this->_('Daily'),
+				WireCache::expireWeekly => $this->_('Weekly'),
+				TextformatterVideoMarkup::youtubeApiCacheExpiry => $this->_('30 days'),
+			],
 			'collapsed' => 2,
 		]);
 

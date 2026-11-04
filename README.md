@@ -57,7 +57,7 @@ The preferred way of loading 3rd-party resources is via a facade: [https://devel
 This module creates the markup appropriate for [https://github.com/paulirish/lite-youtube-embed](lite-youtube-embed) and [https://github.com/luwes/lite-vimeo-embed](lite-vimeo-embed) and it can be accessed via the `lite` property. You will need to implement the required assets yourself for this to work.
 
 ### Cache
-Any data returned by the oEmbed endpoints is cached permanently unless cleared manually, which you can do so here.
+Any data returned by the oEmbed endpoints is cached for the period set in *oEmbed Cache* (by default, permanently) unless cleared manually, which you can do so here. Failed requests (e.g. a deleted or private video) are logged to the `textformatter-video-markup` log and cached for an hour.
 
 ## Hooking
 The `render()` method is hookable, allowing you to customise rendering on a per page, per field basis.

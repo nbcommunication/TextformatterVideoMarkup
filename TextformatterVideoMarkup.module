@@ -27,7 +27,7 @@ class TextformatterVideoMarkup extends Textformatter implements ConfigurableModu
 	public static function getModuleInfo() {
 		return [
 			'title' => 'Video markup for YouTube/Vimeo',
-			'version' => 111,
+			'version' => 120,
 			'summary' => 'Render oEmbed data from YouTube/Vimeo URLs.',
 			'author' => 'nbcommunication',
 			'href' => 'https://github.com/nbcommunication/TextformatterVideoMarkup',
@@ -37,6 +37,12 @@ class TextformatterVideoMarkup extends Textformatter implements ConfigurableModu
 	}
 
 	const noCookie = 'noCookie';
+
+	/**
+	 * Timezone of Vimeo's oEmbed `upload_date` (Y-m-d H:i:s, no offset given)
+	 *
+	 */
+	const vimeoUploadDateTimezone = 'UTC';
 
 	/**
 	 * YouTube Data API v3 videos endpoint
@@ -130,7 +136,7 @@ class TextformatterVideoMarkup extends Textformatter implements ConfigurableModu
 			$page->of($of);
 		}
 
-		$value = str_replace('&amp;', '&', $value);
+		$value = str_replace('&amp;', '&', (string) $value);
 
 		$this->renderYoutube($value);
 		$this->renderVimeo($value);
@@ -218,7 +224,7 @@ class TextformatterVideoMarkup extends Textformatter implements ConfigurableModu
 
 		foreach($query as $key => $value) {
 			// Remove # on vm_color
-			if($key == 'color' && $prefix == 'vm_') $query[$key] = ltrim($value, '#');
+			if($key == 'color' && $prefix == 'vm_' && is_string($value)) $query[$key] = ltrim($value, '#');
 		}
 
 		return $url[0] . (count($query) ? '?' . http_build_query($query) : '');
@@ -276,47 +282,59 @@ class TextformatterVideoMarkup extends Textformatter implements ConfigurableModu
 	protected function getData($provider, $url, $originalUrl = '') {
 
 		$isYoutube = $provider == 'yt';
+		$endpoint = $this->getOembedEndpoint($provider, $url);
 
-		$query = [
-			'url' => $url,
-			'maxwidth' => $this->maxWidth,
-			'maxheight' => $this->maxHeight,
-		];
+		$cache = $this->wire()->cache;
+		$name = $this->getOembedCacheName($endpoint);
+		$data = $cache->getFor($this, $name);
 
-		if($isYoutube) {
-			$query['format'] = 'json';
+		if(!is_array($data)) {
+			$http = $this->wire(new WireHttp());
+			$response = $http->getJSON($endpoint);
+			if($response && is_array($response) && count($response)) {
+				$data = $response;
+				$expire = $this->oembedCacheExpiry;
+				if(is_numeric($expire)) $expire = (int) $expire;
+				$cache->saveFor($this, $name, $data, $expire ?: WireCache::expireNever);
+			} else {
+				// Cache failures (e.g. deleted, private or mistyped videos) for an hour,
+				// so the endpoint isn't requested again on every render
+				$this->wire()->log->save(
+					'textformatter-video-markup',
+					sprintf('oEmbed request failed for %s (HTTP %s)', $url, $http->getHttpCode())
+				);
+				$data = ['error' => (int) $http->getHttpCode() ?: 1];
+				$cache->saveFor($this, $name, $data, WireCache::expireHourly);
+			}
 		}
 
-		$endpoint = ($isYoutube ?
-			'https://www.youtube.com/oembed' :
-			'https://vimeo.com/api/oembed.json'
-		) . '?' . http_build_query($query);
-
-		$data = $this->wire()->cache->getFor($this, md5($endpoint), function() use ($endpoint) {
-			$response = $this->wire(new WireHttp())->getJSON($endpoint);
-			if($response && is_array($response) && count($response)) {
-				return $response;
-			}
-			return false;
-		}, WireCache::expireNever);
+		if(isset($data['error'])) $data = false;
 
 		if(is_array($data)) {
-			$query = explode('?', $url);
-			if(count($query) > 1 && isset($data['html'])) {
-				$query = $query[1];
-				if(strlen($query)) {
-					$query = str_replace('&amp;', '&', $query);
-					if($isYoutube) {
-						$query = explode('&', $query, 2);
-						$query = count($query) > 1 ? trim($query[1], '&') : '';
-					}
-					if($query) {
-						$data['html'] = str_replace('?', "?$query&", $data['html']);
-						$data['params'] = $query;
-					}
-					$data['html'] = $this->applyYoutubeNoCookie($data['html']);
+
+			// Entity encode the oEmbed text values (the embed html is left as it is)
+			$data = $this->encodeData($data, ['html']);
+
+			$data['html'] = $data['html'] ?? '';
+
+			$query = explode('?', $url, 2);
+			if(count($query) > 1 && $data['html']) {
+				$query = str_replace('&amp;', '&', $query[1]);
+				if($isYoutube) {
+					$query = explode('&', $query, 2);
+					$query = count($query) > 1 ? trim($query[1], '&') : '';
+				}
+				if($query) {
+					// Add the query to the iframe src only (not e.g. a title containing '?')
+					$data['html'] = preg_replace_callback('/(<iframe[^>]*?\ssrc=")([^"]*)"/', function($m) use ($query) {
+						$src = strpos($m[2], '?') !== false ? str_replace('?', "?$query&", $m[2]) : "$m[2]?$query";
+						return "$m[1]$src\"";
+					}, $data['html'], 1);
+					$data['params'] = $query;
 				}
 			}
+
+			if($isYoutube) $data['html'] = $this->applyYoutubeNoCookie($data['html']);
 
 			$data['url'] = $originalUrl ?: $url;
 			preg_match('/<iframe.*?src="(.*?)"/', $data['html'], $matches);
@@ -341,6 +359,18 @@ class TextformatterVideoMarkup extends Textformatter implements ConfigurableModu
 				$data += $this->getYoutubeApiData($data['video_id']);
 			}
 
+			// Vimeo: add the ISO 8601 publish date and timestamp, matching the YouTube Data API keys
+			if(!$isYoutube && !empty($data['upload_date']) && !isset($data['published_at'])) {
+				try {
+					$date = new \DateTime($data['upload_date'], new \DateTimeZone(self::vimeoUploadDateTimezone));
+					$data['published_at'] = $date->format(\DateTime::ATOM);
+					$data['published_timestamp'] = $date->getTimestamp();
+				} catch(\Exception $e) {
+					$data['published_at'] = '';
+					$data['published_timestamp'] = 0;
+				}
+			}
+
 			// lite facade
 			$type = $isYoutube ? 'youtube' : 'vimeo';
 			$data['lite'] = "<lite-$type videoid=\"{$data['video_id']}\" params=\"{$data['params']}\" playlabel=\"{$this->_('Play')}: {$data['title']}\"></lite-$type>";
@@ -357,6 +387,59 @@ class TextformatterVideoMarkup extends Textformatter implements ConfigurableModu
 		}
 
 		return is_array($data) ? $data : [];
+	}
+
+	/**
+	 * Get the oEmbed endpoint URL for a video URL
+	 *
+	 * @param string $provider `yt` or `vm`
+	 * @param string $url The video URL, with options applied
+	 * @return string
+	 *
+	 */
+	protected function getOembedEndpoint($provider, $url) {
+
+		$query = [
+			'url' => $url,
+			'maxwidth' => $this->maxWidth,
+			'maxheight' => $this->maxHeight,
+		];
+
+		if($provider == 'yt') {
+			$query['format'] = 'json';
+		}
+
+		return ($provider == 'yt' ?
+			'https://www.youtube.com/oembed' :
+			'https://vimeo.com/api/oembed.json'
+		) . '?' . http_build_query($query);
+	}
+
+	/**
+	 * Get the cache name for an oEmbed endpoint URL
+	 *
+	 * @param string $endpoint
+	 * @return string
+	 *
+	 */
+	protected function getOembedCacheName($endpoint) {
+		return md5($endpoint);
+	}
+
+	/**
+	 * Entity encode the string values of an array
+	 *
+	 * @param array $data
+	 * @param array $skip Keys to leave as they are (e.g. embed markup)
+	 * @return array
+	 *
+	 */
+	protected function encodeData(array $data, array $skip = []) {
+		$sanitizer = $this->wire()->sanitizer;
+		foreach($data as $key => $value) {
+			if(is_string($value) && !in_array($key, $skip, true)) $data[$key] = $sanitizer->entities($value);
+		}
+		return $data;
 	}
 
 	/**
@@ -433,10 +516,7 @@ class TextformatterVideoMarkup extends Textformatter implements ConfigurableModu
 			$data += $this->flattenYoutubeApiData($item[$part], ($part === 'localizations' ? 'localizations_' : ''));
 		}
 
-		$sanitizer = $this->wire()->sanitizer;
-		foreach($data as $key => $value) {
-			if(is_string($value) && $key !== 'embed_html') $data[$key] = $sanitizer->entities($value);
-		}
+		$data = $this->encodeData($data, ['embed_html']);
 
 		// Duration: seconds (as Vimeo), ISO 8601 and formatted
 		$seconds = 0;

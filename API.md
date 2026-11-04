@@ -29,6 +29,7 @@ the module instance, e.g. `$modules->get('TextformatterVideoMarkup')->maxWidth`.
 | `maxHeight` | int | `720` | Sent as `maxheight` to the oEmbed endpoint request (YouTube only sends `format=json` in addition). |
 | `emptyValue` | string | `''` | Rendered (via `___render()`) when no oEmbed data is returned, e.g. private/deleted video. Supports `{url}` and `{link}` placeholders (see below). |
 | `youtubeApiKey` | string | `''` | YouTube Data API v3 key. If set, YouTube `$data` is extended with Data API fields (see "YouTube Data API" below). Deliberately **not** `yt_`-prefixed, so it is never sent as an embed URL parameter. |
+| `oembedCacheExpiry` | int\|string | `WireCache::expireNever` | v120+. How long to cache each oEmbed response for. Options: never/hourly/daily/weekly/30 days. Only applies to newly cached responses. |
 | `youtubeApiCacheExpiry` | int | `TextformatterVideoMarkup::youtubeApiCacheExpiry` (2592000, 30 days) | Seconds to cache each Data API response for. Options: hourly/daily/weekly/30 days. 30 days is the YouTube API Services terms' maximum. |
 
 Additionally, every YouTube (`yt_*`) and Vimeo (`vm_*`) option key listed
@@ -108,6 +109,10 @@ on every response - especially Vimeo's provider-specific extras):
 `provider_url`, `thumbnail_url`, `thumbnail_width`, `thumbnail_height`,
 `html`, `width`, `height`.
 
+As of v120, all string values other than `html` are entity encoded (e.g.
+`title`, `author_name`, `thumbnail_url`), so they are safe to use in markup
+and attributes. Earlier versions passed them through as plain text.
+
 Additional keys added by this module before `render()` is called:
 
 | Key | Description |
@@ -119,9 +124,11 @@ Additional keys added by this module before `render()` is called:
 | `video_id` | The provider's video ID, extracted from the last path segment of `embedUrl` if not already present in the response. |
 | `params` | The extra query string (beyond the video ID/URL) from the original requested URL, if any. |
 | `lite` | Pre-rendered `<lite-youtube>`/`<lite-vimeo>` facade markup string (see README "Facades"). Built from `video_id`, `params`, and a translated "Play: {title}" label. |
+| `published_at` | v120+, Vimeo only (YouTube gets it from the Data API): ISO 8601 date derived from `upload_date`, read in `TextformatterVideoMarkup::vimeoUploadDateTimezone` (`UTC`), e.g. `2013-10-15T14:08:29+00:00`. `''` if `upload_date` can't be parsed. |
+| `published_timestamp` | v120+, Vimeo only: Unix timestamp (int) derived from `upload_date`. |
 | `debug` | HTML table of all `$data` key/value pairs (via `MarkupAdminDataTable`), only populated if `$config->debug` is true; otherwise `''`. |
 
-### YouTube Data API (`youtubeApiKey` set, v111+)
+### YouTube Data API (`youtubeApiKey` set, v120+)
 
 For YouTube URLs with a resolvable `video_id`, `getYoutubeApiData()` requests
 `https://www.googleapis.com/youtube/v3/videos` with every part available to an
@@ -168,12 +175,19 @@ are logged to the `textformatter-video-markup` log and cached as
 "Clear Cache" button clears these too, but they are excluded from the cached
 video count.
 
-Data is cached **permanently** (`WireCache::expireNever`) keyed by
-`md5($endpoint)` (the full oEmbed request URL including maxwidth/maxheight
+Data is cached for `oembedCacheExpiry` (default **permanently**, `WireCache::expireNever`; configurable as of v120) keyed by
+`getOembedCacheName($endpoint)`, i.e. `md5($endpoint)` (the full oEmbed request URL from `getOembedEndpoint()` including maxwidth/maxheight
 query params) - i.e. changing `maxWidth`/`maxHeight` config produces a new
-cache entry rather than invalidating the old one. Manual clearing only, via
+cache entry rather than invalidating the old one. Changing
+`oembedCacheExpiry` doesn't affect existing entries. Manual clearing is via
 the "Clear Cache" button on the module config screen (deletes all cache
 entries for this module in one action, not selectively).
+
+As of v120, failed requests (e.g. a deleted, private or mistyped video) are
+logged to the `textformatter-video-markup` log and cached as
+`['error' => httpCode]` for an hour, so the endpoint isn't requested on every
+render. The `emptyValue` is rendered in the meantime. These entries are
+included in the cached video count.
 
 ## URL matching
 
