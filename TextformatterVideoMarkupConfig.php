@@ -125,6 +125,7 @@ class TextformatterVideoMarkupConfig extends ModuleConfig {
 			'notes' => $this->_('Changes only apply to newly cached videos. Clear the cache to apply them to all videos.'),
 			'icon' => 'clock-o',
 			'required' => true,
+			'defaultValue' => WireCache::expireNever,
 			'options' => [
 				WireCache::expireNever => $this->_('Never expire'),
 				WireCache::expireHourly => $this->_('Hourly'),
@@ -170,6 +171,7 @@ class TextformatterVideoMarkupConfig extends ModuleConfig {
 			'icon' => 'clock-o',
 			'columnWidth' => 50,
 			'required' => true,
+			'defaultValue' => TextformatterVideoMarkup::youtubeApiCacheExpiry,
 			'options' => [
 				WireCache::expireHourly => $this->_('Hourly'),
 				WireCache::expireDaily => $this->_('Daily'),
