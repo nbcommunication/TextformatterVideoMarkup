@@ -14,7 +14,7 @@ gotchas.
 - Class: `TextformatterVideoMarkup` (file `TextformatterVideoMarkup.module`), extends `Textformatter`, implements `ConfigurableModule`
 - Config class: `TextformatterVideoMarkupConfig` (file `TextformatterVideoMarkupConfig.php`, extends `ModuleConfig`)
 - `autoload`: not set (standard Textformatter - runs only when applied to a field's Text Formatters)
-- Requires: ProcessWire >= 3.0.148, PHP >= 7.4
+- Requires: ProcessWire >= 3.0.148, PHP >= 8.0
 - Constant `TextformatterVideoMarkup::noCookie` = `'noCookie'` - used internally to identify/exclude the `yt_noCookie` config key from being passed through as a literal YouTube query parameter (it's applied via a domain swap instead, see below).
 
 ## Module config properties (`getDefaults()`)

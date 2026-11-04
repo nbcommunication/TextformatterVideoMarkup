@@ -3,7 +3,7 @@ Render oEmbed data from YouTube/Vimeo URLs. Based on [TextformatterVideoEmbed](h
 
 ## Requirements
 * ProcessWire >= 3.0.148
-* PHP >= 7
+* PHP >= 8.0
 
 ## Installation
 1. Download the [zip file](https://github.com/nbcommunication/TextformatterVideoMarkup/archive/master.zip) at Github or clone the repo into your `site/modules` directory.

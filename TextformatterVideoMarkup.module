@@ -32,7 +32,7 @@ class TextformatterVideoMarkup extends Textformatter implements ConfigurableModu
 			'author' => 'nbcommunication',
 			'href' => 'https://github.com/nbcommunication/TextformatterVideoMarkup',
 			'icon' => 'video-camera',
-			'requires' => 'ProcessWire>=3.0.148,PHP>=7.4',
+			'requires' => 'ProcessWire>=3.0.148,PHP>=8.0',
 		];
 	}
 
